@@ -6,7 +6,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 const jwt = require('jsonwebtoken')
 const morgan = require('morgan')
 
-const port = process.env.PORT || 9000
+const port = process.env.PORT || 5000
 const app = express()
 // middleware
 const corsOptions = {
@@ -38,7 +38,6 @@ const verifyToken = async (req, res, next) => {
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.yn4cz.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -46,8 +45,31 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 })
+
 async function run() {
   try {
+    const db = client.db('plantNet')
+    const usersCollection = db.collection('users');
+    const plantsCollection = db.collection('plants');
+
+    // save or update
+    app.post('/users/:email', async(req, res) => {
+      const email = req.params.email;
+      const query = { email }
+      const user = req.body
+      // cheak if user exists in db
+      const isExist = await usersCollection.findOne(query)
+      if(isExist) {
+        return res.send(isExist)
+      }
+      const result = await usersCollection.insertOne({
+        ...user,
+        role: 'customer',
+        timestamp: Date.now()
+      });
+      res.send(result)
+    })
+    
     // Generate jwt token
     app.post('/jwt', async (req, res) => {
       const email = req.body
@@ -61,7 +83,21 @@ async function run() {
           sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
         })
         .send({ success: true })
-    })
+    });
+
+    // get all plants from db
+    app.get('/plants', async(req, res) => {
+      const result = await plantsCollection.find().limit(20).toArray();
+      res.send(result);
+    });
+
+    // save a plant data in db
+    app.post('/plants', verifyToken, async(req, res) => {
+      const plant = req.body;
+      const result = await plantsCollection.insertOne(plant);
+      res.send(result);
+    });
+
     // Logout
     app.get('/logout', async (req, res) => {
       try {
@@ -79,9 +115,7 @@ async function run() {
 
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 })
-    console.log(
-      'Pinged your deployment. You successfully connected to MongoDB!'
-    )
+    console.log('Pinged your deployment. You successfully connected to MongoDB!')
   } finally {
     // Ensures that the client will close when you finish/error
   }
